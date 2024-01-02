@@ -9,7 +9,6 @@ import numpy as np
 import tqdm
 from flirimageextractor import FlirImageExtractor
 from osgeo import gdal, osr
-from exiftool import ExifToolHelper
 
 def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     try: 
@@ -27,6 +26,7 @@ def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     except NotADirectoryError:
         raise
 
+def process_flir_images(input_dir, output_dir):
     # Get a list of all files in the input directory
     file_list = os.listdir(input_dir)
 
@@ -43,6 +43,7 @@ def process_flir_image(input_path, output_dir):
     # Open the FLIR image using FlirImageExtractor
     flir_image = FlirImageExtractor()
     flir_image.loadfile(input_path)
+    flir_image.fix_endian = False
     metadata = flir_image.get_metadata(input_path)
 
     # Get the visible and thermal images only when they exist
@@ -52,8 +53,6 @@ def process_flir_image(input_path, output_dir):
         visible_image = flir_image.extract_embedded_image()
     if "RawThermalImageType" in metadata:
         thermal_image = flir_image.extract_thermal_image()
-
-
 
     # Perform your image processing here (for thermal images)
     # For example, you can apply filters, resize, etc.
