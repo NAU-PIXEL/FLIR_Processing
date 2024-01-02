@@ -1,5 +1,12 @@
 
+import argparse
 import os
+import pathlib
+from multiprocessing import Pool
+from functools import partial
+
+import numpy as np
+import tqdm
 from flirimageextractor import FlirImageExtractor
 from osgeo import gdal, osr
 from exiftool import ExifToolHelper
