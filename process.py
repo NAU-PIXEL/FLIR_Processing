@@ -11,10 +11,21 @@ from flirimageextractor import FlirImageExtractor
 from osgeo import gdal, osr
 from exiftool import ExifToolHelper
 
-def process_flir_images(input_dir, output_dir):
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
+    try: 
+        if not os.path.exists(input_dir):
+            raise NotADirectoryError
+
+        # Create output directory if it doesn't exist1
+        if os.path.exists(output_dir):
+            if len(os.listdir(output_dir)) != 0 and not output_to_non_empty:
+                input('Output directory is not empty. Press Enter to continue or Ctrl+C to exit.')
+        else:
+            os.makedirs(output_dir)
+    except PermissionError:
+        raise
+    except NotADirectoryError:
+        raise
 
     # Get a list of all files in the input directory
     file_list = os.listdir(input_dir)
@@ -101,5 +112,5 @@ if __name__ == "__main__":
     input_directory = 'input'
     output_directory = 'output'
 
-    process_flir_images(input_directory, output_directory)
+    setup_dirs(input_directory, output_directory)
 
