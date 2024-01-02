@@ -113,3 +113,12 @@ if __name__ == "__main__":
 
     setup_dirs(input_directory, output_directory)
 
+    filelist = os.listdir(input_directory)
+
+    process_partial = partial(process_flir_image, input_directory, output_directory, **override)
+    if args.debug:
+        for file in filelist:
+            process_partial(file)
+    else:
+        with Pool(args.n_thread) as p:
+            list(tqdm.tqdm(p.imap(process_partial, filelist)))
