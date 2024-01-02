@@ -26,9 +26,6 @@ def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     except NotADirectoryError:
         raise
 
-def process_flir_images(input_dir, output_dir):
-    # Get a list of all files in the input directory
-    file_list = os.listdir(input_dir)
 
     # Process each file in the input directory
     for file_name in file_list:
