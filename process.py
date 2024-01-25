@@ -9,6 +9,7 @@ from functools import partial
 
 # External libraries
 import numpy as np
+import pandas as pd
 import tqdm
 from flirimageextractor import FlirImageExtractor
 from osgeo import gdal, osr
@@ -16,6 +17,7 @@ from osgeo import gdal, osr
 # Local modules
 import dji_utils
 import file_utils
+import flir_image_extractor_patch
 
 def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     try: 
@@ -83,7 +85,21 @@ def gps_from_source(metadata, gps_source):
     metadata['GPSLongitude'] = gps['longitude']
     metadata['GPSAltitude'] = gps['altitude']
 
-def process_raw_image(input_dir, output_dir, height_source, gps_source, filename):
+def atmos_from_source(flir_obj, metadata, atmos_source):
+    timestamp = metadata['DateTimeOriginal'][:-10]
+    timestamp = datetime.datetime.strptime(timestamp, "%Y:%m:%d %H:%M:%S")
+
+    # will be a df if the source is timestamped data to match
+    if type(atmos_source) == type(pd.DataFrame):
+        atmos = atmos_source.loc[(atmos_source['datetime'] - timestamp).abs().idxmin()]
+        atmos_dict = atmos.to_dict()
+    # will just be a dict if the source is static data to apply
+    else:
+        atmos_dict = atmos_source
+    flir_image_extractor_patch.monkey_patch_flir(flir_obj, atmos_dict)
+
+
+def process_raw_image(input_dir, output_dir, data_sources, filename):
     input_path = os.path.join(input_dir, filename)
     # Open the FLIR image using FlirImageExtractor
     flir_image = FlirImageExtractor()
@@ -91,13 +107,16 @@ def process_raw_image(input_dir, output_dir, height_source, gps_source, filename
     flir_image.fix_endian = False
     metadata = flir_image.get_metadata(input_path)
 
-    if gps_source is not None:
-        gps_from_source(metadata, gps_source)
+    if 'gps' in data_sources:
+        gps_from_source(metadata, data_sources['gps'])
 
+    # empty dictionary 
+    if "atmos" in data_sources:
+        atmos_from_source(flir_image, metadata, data_sources['atmos'])
     # GPS may not always give heights that are above ground reference altitude
     # but obviously distance is always positive and is required for calculations
     # so default to 1 meter
-    flir_image.default_distance = max(1, get_height(height_source, metadata))
+    flir_image.default_distance = max(1, get_height(data_sources['height'], metadata))
     metadata['ObjectDistance'] = flir_image.default_distance
 
     # Get the visible and thermal images only when they exist
@@ -126,9 +145,9 @@ def process_raw_image(input_dir, output_dir, height_source, gps_source, filename
         file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_visible.jpg'), visible_image, 'JPEG', metadata)
 
 
-def load_gps_table(gps_source_path, source_type):
+def load_gps_table(gps_source_path, source_type, offset):
     if source_type == "dji":
-        return dji_utils.gps_table_from_images(gps_source_path)
+        return dji_utils.gps_table_from_images(gps_source_path, offset)
     else:
         raise NotImplementedError
 
@@ -140,12 +159,22 @@ if __name__ == "__main__":
                         help="Input directory of files to process.")
     parser.add_argument('-o', '--output', type=pathlib.Path, required=True,
                         help="Output diredctory of files to process. Will prompt user to confirm if output folder is not empty. Will create directory and parent directories if they do not exist.")
+    parser.add_argument('-e', '--emissivity', type=float,
+                        help="Emissivity used for calculation of temperature.")
     parser.add_argument('-y', '--yes', action='store_true', 
                         help="Automatic yes to prompts, including clobbering output directory.")
     parser.add_argument('--n_thread', type=int, 
                         help='Number of threads to use in multiprocessing pool.')
     parser.add_argument('--dji_gps_source', type=pathlib.Path,
                         help='Instead of using GPS data extracted from the image to get latitude and longitude, use GPS data extracted from a series of DJI camera images')
+    parser.add_argument('--dji_time_offset', type=int, default=0,
+                        help='Time offset in seconds to add to DJI timestamps. Useful if DJI timestamps are not synced to the FLIR camera\'s timestamp. Must be an integer.')
+    parser.add_argument('--ground_station_log', type=pathlib.Path,
+                        help='Excel file of ground station atmospheric conditions, for more accurate temperature calculations.')
+    parser.add_argument('--ground_station_cols', type=str,
+                        help='Comma separated list of either column titles or column indices. Required if ground_station_log is passed. The order must be timestamp,atmos_temp,relative_humidity. Integer indices count from 0, and string indices are case sensitive.')
+    # CSV ground station logs, reading is easy, how it impacts the temperature calculation is hard.
+    # Match up to nearest second almost exactly the same as matching the GPS timestamps.
 
 
     elevation_group = parser.add_mutually_exclusive_group(required=True)
@@ -164,26 +193,50 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    process_args = {}
+    input_directory = args.input
+    output_directory = args.output
+
+    data_sources = dict()
     if args.height:
         height_source = {'val': args.height, 'type': 'height'}
     elif args.heightmap:
         height_source = {'val': args.heightmap, 'type': 'elevation_map'}
     elif args.elevation:
         height_source = {'val': args.elevation, 'type': 'elevation'}
-    input_directory = args.input
-    output_directory = args.output
+    data_sources['height'] = height_source
 
     gps_source = None
     if args.dji_gps_source:
-        gps_table = load_gps_table(args.dji_gps_source, source_type='dji')
-        gps_source = gps_table
+        gps_table = load_gps_table(args.dji_gps_source, 'dji', args.dji_time_offset)
+        data_sources['gps'] = gps_table
+
+    atmos_override = False
+    atmos_source = dict()
+    if args.ground_station_log:
+        atmos_override = True
+        if not args.ground_station_cols:
+            raise ValueError('Told to use ground station logger without specifying columns, exiting early.')
+        gs_cols = args.ground_station_cols.split(',')
+        try:
+            gs_cols = list(map(int, gs_cols))
+        except ValueError:
+            print('Ground station columns were not indices, using them as column names')
+        atmos_source = file_utils.load_ground_data(args.ground_station_log, gs_cols)
+    
+    if args.emissivity:
+        atmos_override = True
+        # if atmos_source is still a dict, set the key
+        # but if it's a dataframe from the ground station, this makes a column
+        atmos_source['Emissivity'] = args.emissivity
+        
+    if atmos_override:
+        data_sources['atmos'] = atmos_source
 
     setup_dirs(input_directory, output_directory, args.yes)
 
     filelist = os.listdir(input_directory)
 
-    process_partial = partial(process_raw_image, input_directory, output_directory, height_source, gps_source)
+    process_partial = partial(process_raw_image, input_directory, output_directory, data_sources)
     if args.debug:
         for file in filelist:
             process_partial(file)

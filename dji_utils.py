@@ -3,7 +3,7 @@ import os
 import exiftool
 import pandas as pd
 
-def gps_table_from_images(source_path):
+def gps_table_from_images(source_path, offset):
   images = os.listdir(source_path)
   images = [os.path.join(source_path, image) for image in images]
   
@@ -28,4 +28,5 @@ def gps_table_from_images(source_path):
   # convert datetime column from string to datetime
   # DJI uses weird format, 2024:01:18 20:08:10, no timezone.
   df['datetime'] = pd.to_datetime(df['datetime'], format="%Y:%m:%d %H:%M:%S")
+  df['datetime'] = df['datetime'] + pd.Timedelta(seconds=offset)
   return df

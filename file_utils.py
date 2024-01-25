@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from osgeo import gdal, osr
 
 def get_heightmap_elevation(heightmap, gps_lat, gps_long):
@@ -70,3 +71,28 @@ def save_geotiff(output_path, image_data, drivertype, metadata):
     # Close the dataset
     dataset.FlushCache()
     dataset = None
+
+
+def load_ground_data(ground_log_path, col_indices):
+    rename_cols = ['datetime', "AtmosphericTemperature", "RelativeHumidity"]
+    # For now we assume that the first row is some title stuff we don't care about
+    # and that the column titles are the next row after that.
+    # and since skiprows skips before getting the header we do that after
+    df = pd.read_excel(str(ground_log_path), header=1)
+    df = df.drop(index=[0,1])
+
+    if type(col_indices[0]) == int:
+        df = df.iloc[:, col_indices]
+    else:
+        df = df[col_indices]
+    # input files all look like they have standardized datetime strings so
+    # we're going to assume we don't have to use or pass a format string
+    # we do not use df.infer_objects() so that we do not have to change
+    # the behavior of the function that processes these fields, and it 
+    # expects strings that it parses itself.
+    df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0])
+    
+    df.columns = rename_cols
+
+    return df
+
