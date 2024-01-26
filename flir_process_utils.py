@@ -21,13 +21,17 @@ for k = 1:length(FLIRFiles)
     status = copyfile(FileName,destripe,'f');
     t = Tiff(destripe,'r+');
     RAW = single(read(t));
-    DS = zeros(size(RAW));
-    xavg = mean(RAW,2);
+    DS = zeros(size(RAW)); 2d arr empty, used as destripe output target
+    xavg = mean(RAW,2); mean along 2nd axis, column averages. 1D
     %The window size (in pixels) is important and should be at least a few times as large as the typical striping artifact.
     windowSize = 31; 
-    conv = movmean(xavg,windowSize,'omitnan');
-    for i = 1:size(RAW,1)
-        DS(i,:) = RAW(i,:) - (xavg(i)-conv(i));
+    conv = movmean(xavg,windowSize,'omitnan'); Moving mean convolution, uniform I think?
+    for i = 1:size(RAW,1) over very column
+        DS(i,:) = store into the first row
+          RAW(i,:) original row
+            - (xavg(i)-conv(i));  average at column minus convolution at pixel.
+            when xavg is high (a stripe) removing the conv doesn't do a lot
+            so subtracting the high value removes the stripe
 %         %There has been an issue with this code adding stripes as a result of large temperature deviations that are real.
 %         %One solution might be to ignore values above or below a certain threthold when calculating the row mean and moving mean
     end
@@ -38,11 +42,19 @@ end
 
 
 def destripe_rows(image_ndarr):
-  pass
+  row_avgs = np.mean(image_ndarr, axis=1)
+  # find what the equivalent fill value is
+  conv = scipy.ndimage.uniform_filter1d(row_avgs, 31,)
+  # have to do this since we collapsed a middle dimension to get it back so we 
+  # have broadcastable shapes again.
+  conv = np.expand_dims(conv, axis=1)
+  image_ndarr = image_ndarr - conv
+  
+  return image_ndarr
 
 def static_flat_field_correct(image_ndarr):
   # filter each layer with box filter, in reference code it's 191 pix squared
-  filtered = scipy.ndimage.uniform_filter(image_ndarr, size=191, mode="nearest" axes=(0,1))
+  filtered = scipy.ndimage.uniform_filter(image_ndarr, size=191, mode="nearest", axes=(0,1))
 
   # get 10 pix squared section of each filtered image, then take mean of that subsection
   mid_x, mid_y = filtered.shape[0] // 2, filtered.shape[1] // 2

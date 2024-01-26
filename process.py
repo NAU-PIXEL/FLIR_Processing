@@ -18,6 +18,7 @@ from osgeo import gdal, osr
 import dji_utils
 import file_utils
 import flir_image_extractor_patch
+import flir_process_utils
 
 def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     try: 
@@ -90,12 +91,14 @@ def atmos_from_source(flir_obj, metadata, atmos_source):
     timestamp = datetime.datetime.strptime(timestamp, "%Y:%m:%d %H:%M:%S")
 
     # will be a df if the source is timestamped data to match
-    if type(atmos_source) == type(pd.DataFrame):
+    if type(atmos_source) == type(pd.DataFrame()):
         atmos = atmos_source.loc[(atmos_source['datetime'] - timestamp).abs().idxmin()]
         atmos_dict = atmos.to_dict()
     # will just be a dict if the source is static data to apply
     else:
         atmos_dict = atmos_source
+    for key, val in atmos_dict.items():
+        metadata[key] = val
     flir_image_extractor_patch.monkey_patch_flir(flir_obj, atmos_dict)
 
 
@@ -110,7 +113,7 @@ def process_raw_image(input_dir, output_dir, data_sources, filename):
     if 'gps' in data_sources:
         gps_from_source(metadata, data_sources['gps'])
 
-    # empty dictionary 
+    # in works for both dicts and dataframes
     if "atmos" in data_sources:
         atmos_from_source(flir_image, metadata, data_sources['atmos'])
     # GPS may not always give heights that are above ground reference altitude
@@ -132,10 +135,6 @@ def process_raw_image(input_dir, output_dir, data_sources, filename):
     # Get the input file name without extension
     file_name_without_extension = os.path.splitext(filename)[0]
 
-    if thermal_image is not None:
-        # Save the thermal image as a GeoTIFF with EXIF metadata
-        file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_thermal.tif'), thermal_image, 'GTiff', metadata)
-
     # Check if the visible image is available before saving
     if visible_image is not None:
         # Perform your image processing here (for visible images)
@@ -143,6 +142,12 @@ def process_raw_image(input_dir, output_dir, data_sources, filename):
 
         # Save the visible image as a GeoTIFF with EXIF metadata
         file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_visible.jpg'), visible_image, 'JPEG', metadata)
+
+    if thermal_image is not None:
+        # Save the thermal image as a GeoTIFF with EXIF metadata
+        return (thermal_image, metadata)
+        # file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_thermal.tif'), thermal_image, 'GTiff', metadata)
+
 
 
 def load_gps_table(gps_source_path, source_type, offset):
@@ -173,9 +178,9 @@ if __name__ == "__main__":
                         help='Excel file of ground station atmospheric conditions, for more accurate temperature calculations.')
     parser.add_argument('--ground_station_cols', type=str,
                         help='Comma separated list of either column titles or column indices. Required if ground_station_log is passed. The order must be timestamp,atmos_temp,relative_humidity. Integer indices count from 0, and string indices are case sensitive.')
-    # CSV ground station logs, reading is easy, how it impacts the temperature calculation is hard.
-    # Match up to nearest second almost exactly the same as matching the GPS timestamps.
 
+    parser.add_argument('--post_process', action='store_true',
+                        help='Perform destriping and then flat field correction on thermal images before output.')
 
     elevation_group = parser.add_mutually_exclusive_group(required=True)
     elevation_group.add_argument('--height', type=int, 
@@ -238,8 +243,22 @@ if __name__ == "__main__":
 
     process_partial = partial(process_raw_image, input_directory, output_directory, data_sources)
     if args.debug:
+        res = []
         for file in filelist:
-            process_partial(file)
+            res.append(process_partial(file))
     else:
         with Pool(args.n_thread) as p:
-            list(tqdm.tqdm(p.imap(process_partial, filelist)))
+            res = list(tqdm.tqdm(p.imap(process_partial, filelist)))
+
+    thermal, meta = list(zip(*res))
+    thermal_ndarr = np.stack(thermal, axis=2)
+    meta_df = pd.DataFrame(meta)
+    if args.post_process:
+        print("Post Processing")
+
+        thermal_ndarr = flir_process_utils.destripe_rows(thermal_ndarr)
+        thermal_ndarr = flir_process_utils.static_flat_field_correct(thermal_ndarr)
+        
+    for i in range(len(meta)):
+        wkg_meta = meta_df.iloc[i].to_dict()
+        file_utils.save_geotiff(os.path.join(args.output, os.path.splitext(wkg_meta['FileName'])[0] + '_thermal.tif'), thermal_ndarr[:,:,i], 'GTiff', wkg_meta)

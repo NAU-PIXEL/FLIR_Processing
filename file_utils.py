@@ -90,9 +90,10 @@ def load_ground_data(ground_log_path, col_indices):
     # we do not use df.infer_objects() so that we do not have to change
     # the behavior of the function that processes these fields, and it 
     # expects strings that it parses itself.
-    df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0])
-    
     df.columns = rename_cols
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df['AtmosphericTemperature'] = df['AtmosphericTemperature'].astype('string')
+    df['RelativeHumidity'] = df['RelativeHumidity'].astype('string')
 
     return df
 
