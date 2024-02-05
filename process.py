@@ -18,7 +18,7 @@ from osgeo import gdal, osr
 import dji_utils
 import file_utils
 import flir_image_extractor_patch
-import flir_process_utils
+import flir_pipeline
 
 def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
     try: 
@@ -158,11 +158,25 @@ def load_gps_table(gps_source_path, source_type, offset):
 
 if __name__ == "__main__":
 
+    # It would probably make sense to break this into at least 2 submodules,
+    # one that can do processing from the initial embedded jpegs and one that 
+    # starts from the C converted images to apply post processing.
+    pre = argparse.ArgumentParser(add_help=False)
+
+    # This is kind of just a dummy arg that lets us override later behaviors
+    # the actual argument is also in the main parser.
+    # I don't like this as a long term solution, but it's okay for now.
+    pre.add_argument('--post_process_help', action='store_true')
+    pre_args, _ = pre.parse_known_args()
+    required_override = False
+    if pre_args.post_process_help:
+        required_override = True
+
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-i', '--input', type=pathlib.Path, required=True,
+    parser.add_argument('-i', '--input', type=pathlib.Path, required=not required_override,
                         help="Input directory of files to process.")
-    parser.add_argument('-o', '--output', type=pathlib.Path, required=True,
+    parser.add_argument('-o', '--output', type=pathlib.Path, required=not required_override,
                         help="Output diredctory of files to process. Will prompt user to confirm if output folder is not empty. Will create directory and parent directories if they do not exist.")
     parser.add_argument('-e', '--emissivity', type=float,
                         help="Emissivity used for calculation of temperature.")
@@ -181,8 +195,12 @@ if __name__ == "__main__":
 
     parser.add_argument('--post_process', action='store_true',
                         help='Perform destriping and then flat field correction on thermal images before output.')
+    parser.add_argument('--post_pipeline', type=str,
+                         help='Comma separted list of post process functions to apply, in order of application. Run with --post_process_help for more information.')
+    parser.add_argument('--post_process_help', action='store_true',
+                        help="Show information on loaded post processing functions and the names to use for them in the pipeline specification")
 
-    elevation_group = parser.add_mutually_exclusive_group(required=True)
+    elevation_group = parser.add_mutually_exclusive_group(required=not required_override)
     elevation_group.add_argument('--height', type=int, 
                         help='Average distance between subject and drone during flight, in integer meters. For more accurate positioning over non-level terrain when GPS is available, use --heightmap option. When terrain is fairly level and GPS is available, the --elevation option can also be used.')
     elevation_group.add_argument('--heightmap', type=pathlib.Path, 
@@ -197,6 +215,10 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS)
     
     args = parser.parse_args()
+
+    if args.post_process_help:
+        flir_pipeline.pipeline.pipeline_help()
+        exit(0)
 
     input_directory = args.input
     output_directory = args.output
@@ -237,6 +259,16 @@ if __name__ == "__main__":
     if atmos_override:
         data_sources['atmos'] = atmos_source
 
+    if args.post_pipeline or args.post_process:
+        if args.post_process:
+            pipe_fns = ['destripe', 'ffc_s']
+        elif args.post_pipeline:
+            pipe_fns = args.post_pipeline.split(',')
+        verify = flir_pipeline.pipeline.verify_pipeline_fns(pipe_fns)
+        if not verify:
+            raise LookupError('Functions in pipeline were not available, please double check --post_process_help to see which functions are available.')
+        fn_pipeline = flir_pipeline.pipeline.build_pipeline(pipe_fns)
+
     setup_dirs(input_directory, output_directory, args.yes)
 
     filelist = os.listdir(input_directory)
@@ -253,11 +285,11 @@ if __name__ == "__main__":
     thermal, meta = list(zip(*res))
     thermal_ndarr = np.stack(thermal, axis=2)
     meta_df = pd.DataFrame(meta)
-    if args.post_process:
+    
+    if args.post_process or args.post_pipeline:
+        
         print("Post Processing")
-
-        thermal_ndarr = flir_process_utils.destripe_rows(thermal_ndarr)
-        thermal_ndarr = flir_process_utils.static_flat_field_correct(thermal_ndarr)
+        thermal_ndarr = fn_pipeline(thermal_ndarr)
         
     for i in range(len(meta)):
         wkg_meta = meta_df.iloc[i].to_dict()
