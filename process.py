@@ -4,6 +4,7 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 from multiprocessing import Pool
 from functools import partial
 
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 from flirimageextractor import FlirImageExtractor
+from thermal_parser import Thermal
 from osgeo import gdal, osr
 
 # Local modules
@@ -38,7 +40,7 @@ def setup_dirs(input_dir, output_dir, output_to_non_empty = False):
 
 def gps_str_to_dd(gps_str):
     # Regex to capture group of digits, then non digits, repeating until we get to the NSEW at end of GPS string
-    gps_re = re.compile('(?P<deg>\d*)\D*(?P<min>\d*)\D*(?P<sec>\d*.\d*)\D*(?P<dir>[NSEW])')
+    gps_re = re.compile(r'(?P<deg>\d*)\D*(?P<min>\d*)\D*(?P<sec>\d*.\d*)\D*(?P<dir>[NSEW])')
     res = gps_re.search(gps_str).groupdict()
     dec_gps = float(res['deg']) + float(res['min']) / 60 + float(res['sec']) / (60 ** 2)
     if res['dir'] in "WS":
@@ -55,7 +57,7 @@ def get_height(height_source, metadata):
         return height_source['val']
     elif height_source['type'] == 'elevation':
         if type(metadata['GPSAltitude']) == str:
-            gps_alt = float(re.search('(\d*.?\d*)',metadata['GPSAltitude']).group(1))
+            gps_alt = float(re.search(r'(\d*.?\d*)',metadata['GPSAltitude']).group(1))
         elif type(metadata['GPSAltitude']) == np.float64:
             gps_alt = metadata['GPSAltitude']
         ground_elevation = height_source['val']
@@ -64,7 +66,7 @@ def get_height(height_source, metadata):
         if type(metadata['GPSLatitude']) == str:
             gps_lat = gps_str_to_dd(metadata['GPSLatitude'])
             gps_long = gps_str_to_dd(metadata['GPSLongitude'])
-            gps_alt = float(re.search('(\d*.?\d*)',metadata['GPSAltitude']).group(1))
+            gps_alt = float(re.search(r'(\d*.?\d*)',metadata['GPSAltitude']).group(1))
         elif type(metadata['GPSLatitude']) == np.float64:
             gps_lat = metadata['GPSLatitude']
             gps_long = metadata['GPSLongitude']
@@ -148,6 +150,45 @@ def process_raw_image(input_dir, output_dir, data_sources, filename):
         return (thermal_image, metadata)
         # file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_thermal.tif'), thermal_image, 'GTiff', metadata)
 
+# Mavic images are only thermal images with the array of data we care about embedded in their exif data, so we use a different processing path
+# in a different code base that wraps the DJI SDK.
+def process_mavic_image(input_dir, output_dir, data_sources, filename):
+
+    input_path = os.path.join(input_dir, filename)
+    # Open the FLIR image using FlirImageExtractor
+    thermal = Thermal(dtype=np.float32)
+
+    meta = subprocess.Popen([thermal._filepath_exiftool, input_path], stdout=subprocess.PIPE).communicate()[0]
+    meta = meta.decode('utf8').replace('\r', '')
+    metadata = dict([
+        (field.split(':')[0].strip(), field.split(':')[1].strip()) for field in meta.split('\n') if ':' in field
+    ])
+    meta_kwargs = dict()
+    # is this a reasonable default emissivity?
+    meta_kwargs['emissivity'] = 0.98
+    meta_kwargs['reflected_apparent_temperature'] = 20
+    meta_kwargs['relative_humidity'] = 20
+
+    if 'gps' in data_sources:
+        gps_from_source(metadata, data_sources['gps'])
+
+    # in works for both dicts and dataframes
+    if "atmos" in data_sources:
+        atmos_from_source(thermal, metadata, data_sources['atmos'])
+        meta_kwargs["relative_humidity"] = metadata["RelativeHumidity"]
+    # GPS may not always give heights that are above ground reference altitude
+    # but obviously distance is always positive and is required for calculations
+    # so default to 1 meter
+    metadata['ObjectDistance'] = max(1, get_height(data_sources['height'], metadata))
+    meta_kwargs['object_distance'] = metadata['ObjectDistance']
+
+    thermal_image = thermal.parse_dirp2(input_path, **meta_kwargs)
+
+    if thermal_image is not None:
+        metadata['FileName'] = metadata['File Name']
+        # Save the thermal image as a GeoTIFF with EXIF metadata
+        return (thermal_image, metadata)
+        # file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_thermal.tif'), thermal_image, 'GTiff', metadata)
 
 
 def load_gps_table(gps_source_path, source_type, offset):
@@ -192,6 +233,9 @@ if __name__ == "__main__":
                         help='Excel file of ground station atmospheric conditions, for more accurate temperature calculations.')
     parser.add_argument('--ground_station_cols', type=str,
                         help='Comma separated list of either column titles or column indices. Required if ground_station_log is passed. The order must be timestamp,atmos_temp,relative_humidity. Integer indices count from 0, and string indices are case sensitive.')
+    
+    parser.add_argument('--dirp', action='store_true', 
+                        help='Process DJI thermal images, known as "DJI IR processing" in the DJI SDK.')
 
     parser.add_argument('--post_process', action='store_true',
                         help='Perform destriping and then flat field correction on thermal images before output.')
@@ -273,7 +317,11 @@ if __name__ == "__main__":
 
     filelist = os.listdir(input_directory)
 
-    process_partial = partial(process_raw_image, input_directory, output_directory, data_sources)
+    if args.mavic:
+        process_function = process_mavic_image
+    else:
+        process_function = process_raw_image
+    process_partial = partial(process_function, input_directory, output_directory, data_sources)
     if args.debug:
         res = []
         for file in filelist:
@@ -285,6 +333,7 @@ if __name__ == "__main__":
     thermal, meta = list(zip(*res))
     thermal_ndarr = np.stack(thermal, axis=2)
     meta_df = pd.DataFrame(meta)
+    print(meta_df.columns)
     
     if args.post_process or args.post_pipeline:
         

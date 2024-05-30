@@ -1,7 +1,10 @@
-flirimageextractor
+pillow
+loguru
 PyExifTool
-gdal==3.6.2
-numpy
+matplotlib
 scipy
 openpyxl
 pandas
+requests
+logzero
+tqdm
