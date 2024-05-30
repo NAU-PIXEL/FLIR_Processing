@@ -25,10 +25,12 @@ A.2) in addition to A.1, also extract the vis to jpegs (duo pro r on a tower or 
 B) Convert a directory of flir rjpeg to tiffs and associate dji gps tags from a matched set of photos from the DJI drone. (vue pro r on a drone). This should also be easy to extend in the future for other potential location services.
 > python3 process.py -i [input_dir] -o [output_dir] --dji_gps_source [dji_photo_dir] --elevation [elevation in meters]
 
-For a and b can we modify the temperature conversions flir? I can’t remember how this works…
-
 C) convert a directory of tiffs to temperature (tower situation) and modify temperature conversion parameters (perhaps from the tower logger info?). 
 > python3 process.py -i [input_dir] -o [output_dir] --elevation [elevation in meters] --ground_station_log [path_to_logfile] --groud_station_cols [timestamp_col_name],[atmos_temp_col_name],[humidity_col_name]
+
+Processing can be further modified by providing an emissivity value for the observed surface using the `-e` flag.
+
+> python3 process.py -i [input_dir] -o [output_dir] --height [height/distance in meters] -e [float_emissive_property]
 
 D) Convert a directory of DJI thermal images to tiffs. The thermal images should not be mixed with visible images in the same directory. All other options should also work with the DIRP option.
 > python3 process.py -i [input_dir] -o [output_dir] --height [height/distance in meters] --dirp
