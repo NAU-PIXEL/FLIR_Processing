@@ -150,9 +150,9 @@ def process_raw_image(input_dir, output_dir, data_sources, filename):
         return (thermal_image, metadata)
         # file_utils.save_geotiff(os.path.join(output_dir, file_name_without_extension + '_thermal.tif'), thermal_image, 'GTiff', metadata)
 
-# Mavic images are only thermal images with the array of data we care about embedded in their exif data, so we use a different processing path
+# DJI thermal images are only thermal images with the array of data we care about embedded in their exif data, so we use a different processing path
 # in a different code base that wraps the DJI SDK.
-def process_mavic_image(input_dir, output_dir, data_sources, filename):
+def process_dirp_image(input_dir, output_dir, data_sources, filename):
 
     input_path = os.path.join(input_dir, filename)
     # Open the FLIR image using FlirImageExtractor
@@ -317,8 +317,8 @@ if __name__ == "__main__":
 
     filelist = os.listdir(input_directory)
 
-    if args.mavic:
-        process_function = process_mavic_image
+    if args.dirp:
+        process_function = process_dirp_image
     else:
         process_function = process_raw_image
     process_partial = partial(process_function, input_directory, output_directory, data_sources)
