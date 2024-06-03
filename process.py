@@ -333,7 +333,6 @@ if __name__ == "__main__":
     thermal, meta = list(zip(*res))
     thermal_ndarr = np.stack(thermal, axis=2)
     meta_df = pd.DataFrame(meta)
-    print(meta_df.columns)
     
     if args.post_process or args.post_pipeline:
         

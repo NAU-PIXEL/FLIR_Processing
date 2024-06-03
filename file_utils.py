@@ -1,3 +1,5 @@
+import subprocess
+
 import numpy as np
 import pandas as pd
 from osgeo import gdal, osr
@@ -54,6 +56,10 @@ def save_geotiff(output_path, image_data, drivertype, metadata):
     # Set the geotransform
     # dataset.SetGeoTransform((flir_image.longitude, flir_image.pixel_pitch, 0, flir_image.latitude, 0, -flir_image.pixel_pitch))
 
+    # Set GDAL metadata, this is somewhat redundant with the exif metadata
+    # but we did create a little more from the processing settings
+    dataset.SetMetadata(metadata)
+
     # Write the image data to the GeoTIFF
     for band_n in range(image_data.shape[2]):
         band_data = image_data[:,:,band_n]
@@ -61,16 +67,15 @@ def save_geotiff(output_path, image_data, drivertype, metadata):
         band: gdal.Band = dataset.GetRasterBand(band_n + 1)
         band.WriteArray(band_data)
 
-    # Set EXIF metadata
-    for key, value in metadata.items():
-        dataset.SetMetadataItem(key, str(value))
-
     if drivertype == 'JPEG':
         # replace dataset reference from memory to jpeg driver
         dataset = driver.CreateCopy(output_path, dataset, 0)
     # Close the dataset
     dataset.FlushCache()
     dataset = None
+
+    # now that file is written, copy exif data from original using exiftool
+    subprocess.run(['exiftool', '-overwrite_original', '-TagsFromFile', f"{metadata['Directory']}/{metadata['File Name']}", output_path])
 
 
 def load_ground_data(ground_log_path, col_indices):
