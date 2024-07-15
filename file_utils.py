@@ -55,6 +55,11 @@ def save_geotiff(output_path, image_data, drivertype, metadata):
 
     # Set the geotransform
     # dataset.SetGeoTransform((flir_image.longitude, flir_image.pixel_pitch, 0, flir_image.latitude, 0, -flir_image.pixel_pitch))
+    
+    # make sure that all keys in metadata are strings, not all Python/OSgeo
+    # versions will automatically stringify.
+    for key, val in metadata.items():
+        metadata[key] = str(val)
 
     # Set GDAL metadata, this is somewhat redundant with the exif metadata
     # but we did create a little more from the processing settings
