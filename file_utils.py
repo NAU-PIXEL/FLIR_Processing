@@ -78,10 +78,15 @@ def save_geotiff(output_path, image_data, drivertype, metadata):
     # Close the dataset
     dataset.FlushCache()
     dataset = None
-
+    
+    if "FileName" in metadata:
+        original_path = f"{metadata['Directory']}/{metadata['FileName']}"
+    elif "File Name" in metadata:
+        original_path = f"{metadata['Directory']}/{metadata['File Name']}"
+    else:
+        raise Exception("File name not found in metadata")
     # now that file is written, copy exif data from original using exiftool
-    subprocess.run(['exiftool', '-overwrite_original', '-TagsFromFile', f"{metadata['Directory']}/{metadata['File Name']}", output_path])
-
+    subprocess.run(['exiftool', '-overwrite_original', '-TagsFromFile', original_path, output_path])
 
 def load_ground_data(ground_log_path, col_indices):
     rename_cols = ['datetime', "AtmosphericTemperature", "RelativeHumidity"]
