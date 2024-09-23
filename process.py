@@ -63,14 +63,22 @@ def get_height(height_source, metadata):
         ground_elevation = height_source['val']
         return gps_alt - ground_elevation
     elif height_source['type'] == 'elevation_map':
-        if type(metadata['GPSLatitude']) == str:
-            gps_lat = gps_str_to_dd(metadata['GPSLatitude'])
-            gps_long = gps_str_to_dd(metadata['GPSLongitude'])
-            gps_alt = float(re.search(r'(\d*.?\d*)',metadata['GPSAltitude']).group(1))
-        elif type(metadata['GPSLatitude']) == np.float64:
-            gps_lat = metadata['GPSLatitude']
-            gps_long = metadata['GPSLongitude']
-            gps_alt = metadata['GPSAltitude']
+        if "GPSLatitude" in metadata.keys():
+            lat_key = "GPSLatitude"
+            long_key = "GPSLongitude"
+            alt_key = "GPSAltitude"
+        if "GPS Latitude" in metadata.keys():
+            lat_key = "GPS Latitude"
+            long_key = "GPS Longitude"
+            alt_key = "GPS Altitude"
+        if type(metadata[lat_key]) == str:
+            gps_lat = gps_str_to_dd(metadata[lat_key])
+            gps_long = gps_str_to_dd(metadata[long_key])
+            gps_alt = float(re.search(r'(\d*.?\d*)',metadata[alt_key]).group(1))
+        elif type(metadata[lat_key]) == np.float64:
+            gps_lat = metadata[lat_key]
+            gps_long = metadata[long_key]
+            gps_alt = metadata[alt_key]
         ground_elevation = file_utils.get_heightmap_elevation(height_source['val'], gps_lat, gps_long)
         return gps_alt - ground_elevation
 

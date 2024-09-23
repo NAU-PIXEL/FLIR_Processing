@@ -15,20 +15,22 @@ def get_heightmap_elevation(heightmap, gps_lat, gps_long):
     # we can skip reprojecting the coordinate system if the source is already
     # in an appropriate projection
     if 'WGS84' not in proj and 'NAD83' not in proj:
-        source_srs = osr.SpatialReference()
-        source_srs.ImportFromWkt(osr.GetUserInputAsWKT("urn:ogc:def:crs:OGC:1.3:CRS84"))
-
         target_srs = osr.SpatialReference()
-        target_srs.ImportFromWkt(proj)
+        target_srs.ImportFromWkt(osr.GetUserInputAsWKT("urn:ogc:def:crs:OGC:1.3:CRS84"))
 
-        transform = osr.CoordinateTransformation(source_srs, target_srs)
+        source_srs = osr.SpatialReference()
+        source_srs.ImportFromWkt(proj)
 
-        mapx, mapy, *_ = transform.TransformPoint(gps_lat, gps_long)
+        osr_transform = osr.CoordinateTransformation(source_srs, target_srs)
+
+        px, py, *_ = osr_transform.TransformPoint(gps_lat, gps_long)
+        # osr_inverse = osr_transform.GetInverse()
+        
+        # px, py, *_ = osr_inverse.TransformPoint(mapx, mapy)
     else:
         mapx, mapy = gps_long, gps_lat
-
-    tranform_inverse = gdal.InvGeoTransform(transform)
-    px, py = gdal.ApplyGeoTransform(tranform_inverse, mapx, mapy)
+        transform_inverse = gdal.InvGeoTransform(transform)
+        px, py = gdal.ApplyGeoTransform(transform_inverse, mapx, mapy)
     elevation =  dataset.ReadAsArray(px, py, 1,1)
     return elevation[0][0]
 
