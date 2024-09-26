@@ -1,7 +1,15 @@
 # Installation
 This script should work with most recent Python versions, although it has not been tested extensively on them. Windows support is unknown.
 
- Please first install the requirements by running 
+I recommend using a virtual environment, or Anaconda if your virtual environment is not on a supported Python version.
+
+To create the virtual environment, run 
+> python3 -m venv .venv
+
+And activate it by running
+> source .venv/bin/activate
+
+Then install the requirements by running 
 > pip install -r requirements.txt
 
 Then install the Python version of the GDAL library matching the version of your system install of GDAL. The version can be found and installed by running 
