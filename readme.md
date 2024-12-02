@@ -1,5 +1,5 @@
 # Installation
-This script should work with most recent Python versions, although it has not been tested extensively on them. Windows support is unknown.
+This script should work with most recent Python versions, although it has not been tested extensively on them. A CI testing PR would be greatly appreciated! Windows support is untested and therefore unknown.
 
 I recommend using a virtual environment, or Anaconda if your virtual environment is not on a supported Python version.
 
@@ -15,7 +15,7 @@ Then install the requirements by running
 Then install the Python version of the GDAL library matching the version of your system install of GDAL. The version can be found and installed by running 
 > pip install --force-reinstall GDAL[numpy]==$(gdal-config --version)
 
-Also please ensure that a recent version of exiftool is installed, ideally greater than version 12, although the exact minimum required version is unknown.
+Also please ensure that a recent version of exiftool is installed, ideally greater than version 12, although the exact minimum required version is unknown. It is available on most OS distribution's repos, but if not check [its website](https://exiftool.org/) for installation instructions.
 
 # Cookbook
 Example scenarios:
@@ -40,5 +40,5 @@ Processing can be further modified by providing an emissivity value for the obse
 
 > python3 process.py -i [input_dir] -o [output_dir] --height [height/distance in meters] -e [float_emissive_property]
 
-D) Convert a directory of DJI thermal images to tiffs. The thermal images should not be mixed with visible images in the same directory. All other options should also work with the DIRP option.
+D) Convert a directory of DJI thermal images (Produced by DJI thermal cameras) to tiffs. The thermal images should not be mixed with visible images in the same directory. All other options should also work with the DIRP option.
 > python3 process.py -i [input_dir] -o [output_dir] --height [height/distance in meters] --dirp
