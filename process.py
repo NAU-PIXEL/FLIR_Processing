@@ -325,6 +325,9 @@ if __name__ == "__main__":
 
     filelist = os.listdir(input_directory)
 
+    # filter filelist to remove non-jpegs
+    filelist = [f for f in filelist if f.tolower().endswith('.jpg') or f.endswith('.jpeg')]
+
     if args.dirp:
         process_function = process_dirp_image
     else:
